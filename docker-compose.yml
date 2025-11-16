@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  # PostgreSQL - قاعدة البيانات العلائقية للبيانات الوصفية
+  postgres:
+    image: postgres:15-alpine
+    container_name: iiot_postgres
+    environment:
+      POSTGRES_USER: iiot_user
+      POSTGRES_PASSWORD: iiot_secure_password_123
+      POSTGRES_DB: iiot_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - iiot_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iiot_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB - قاعدة البيانات المستندية للبيانات غير المهيكلة
+  mongodb:
+    image: mongo:7.0
+    container_name: iiot_mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: iiot_user
+      MONGO_INITDB_ROOT_PASSWORD: iiot_secure_password_123
+      MONGO_INITDB_DATABASE: iiot_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - iiot_network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # InfluxDB - قاعدة البيانات الزمنية للقياسات السريعة
+  influxdb:
+    image: influxdb:2.7
+    container_name: iiot_influxdb
+    environment:
+      INFLUXDB_DB: iiot_measurements
+      INFLUXDB_ADMIN_USER: iiot_user
+      INFLUXDB_ADMIN_PASSWORD: iiot_secure_password_123
+      INFLUXDB_HTTP_AUTH_ENABLED: "true"
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    networks:
+      - iiot_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Apache Kafka - وسيط الرسائل لنقل البيانات من الحافة
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: iiot_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - iiot_network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: iiot_kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "9092:9092"
+    networks:
+      - iiot_network
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - للتخزين المؤقت والجلسات
+  redis:
+    image: redis:7-alpine
+    container_name: iiot_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - iiot_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  influxdb_data:
+  redis_data:
+
+networks:
+  iiot_network:
+    driver: bridge
